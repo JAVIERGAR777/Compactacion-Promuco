@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema Vehicular Móvil</title>
     <style>
-        /* ESTILOS BASE */
+        /* ESTILOS BASE RESPONSIVE */
         body {
             font-family: 'Arial', sans-serif;
             margin: 0;
@@ -41,7 +41,7 @@
             margin-bottom: 15px;
         }
         
-        input[type="text"] {
+        input, select {
             width: 100%;
             padding: 10px;
             margin-bottom: 10px;
@@ -59,6 +59,7 @@
             cursor: pointer;
             font-size: 14px;
             width: 100%;
+            margin-top: 5px;
         }
         
         /* TABLA RESPONSIVE */
@@ -72,7 +73,7 @@
         
         table {
             width: 100%;
-            min-width: 600px; /* Ancho mínimo para tablas grandes */
+            min-width: 600px;
             border-collapse: collapse;
         }
         
@@ -90,19 +91,20 @@
             top: 0;
         }
         
-        /* ACCIONES PARA MÓVIL */
-        .action-cell {
+        /* MENÚ DESPLEGABLE */
+        .resolution-menu {
             display: flex;
             flex-direction: column;
             gap: 5px;
         }
         
-        .action-btn {
-            padding: 6px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            min-width: 0;
-            text-align: center;
+        select {
+            background-color: #f8f9fa;
+        }
+        
+        .confirm-btn {
+            background-color: #27ae60;
+            font-weight: bold;
         }
         
         /* ESTADOS */
@@ -126,7 +128,7 @@
             text-align: center;
         }
         
-        /* MEDIA QUERIES PARA DISPOSITIVOS GRANDES */
+        /* PARA DISPOSITIVOS GRANDES */
         @media (min-width: 768px) {
             body {
                 padding: 20px;
@@ -139,15 +141,6 @@
             
             h1 {
                 font-size: 2rem;
-            }
-            
-            .action-cell {
-                flex-direction: row;
-            }
-            
-            .action-btn {
-                padding: 8px 12px;
-                font-size: 14px;
             }
             
             th, td {
@@ -190,7 +183,7 @@
         // Configuración
         const SHEETBEST_API = "https://api.sheetbest.com/sheets/c920d07f-13a9-4ad1-a479-84ad8a3c6c2a";
         let allVehicles = [];
-        let currentResults = [];
+        let currentSelections = {}; // Almacena selecciones temporales
 
         // Mostrar notificación
         function showNotification(message, isSuccess = true) {
@@ -212,6 +205,7 @@
             
             loadingElement.style.display = "block";
             resultsDiv.innerHTML = "";
+            currentSelections = {}; // Reinicia selecciones al buscar
             
             try {
                 if (allVehicles.length === 0) {
@@ -220,7 +214,7 @@
                     allVehicles = await response.json();
                 }
                 
-                currentResults = searchTerm 
+                const filteredData = searchTerm 
                     ? allVehicles.filter(vehicle => (
                         (vehicle.dominio && vehicle.dominio.toLowerCase().includes(searchTerm)) ||
                         (vehicle.marca && vehicle.marca.toLowerCase().includes(searchTerm)) ||
@@ -229,7 +223,7 @@
                     ))
                     : allVehicles;
                 
-                displayResults(currentResults);
+                displayResults(filteredData);
             } catch (error) {
                 console.error("Error:", error);
                 resultsDiv.innerHTML = `
@@ -274,21 +268,24 @@
                 const resolutionClass = vehicle.resolucion ? "status-completed" : "status-pending";
                 const resolutionText = vehicle.resolucion || 'Pendiente';
                 
+                // Guarda selección temporal si existe
+                const tempSelection = currentSelections[vehicle.dominio] || vehicle.resolucion || '';
+                
                 html += `
                     <tr id="row-${vehicle.dominio}">
                         <td><strong>${vehicle.dominio || '-'}</strong></td>
                         <td>${vehicle.marca || '-'}</td>
                         <td>${vehicle.modelo || '-'}</td>
                         <td class="${resolutionClass}">${resolutionText}</td>
-                        <td class="action-cell">
-                            <button class="action-btn compactar" 
-                                onclick="updateResolution('${vehicle.dominio}', 'compactar')">
-                                COMPACTAR
-                            </button>
-                            <button class="action-btn no-compactar" 
-                                onclick="updateResolution('${vehicle.dominio}', 'no compactar')">
-                                NO COMPACTAR
-                            </button>
+                        <td class="resolution-menu">
+                            <select id="select-${vehicle.dominio}" onchange="storeSelection('${vehicle.dominio}')">
+                                <option value="">Seleccionar...</option>
+                                <option value="Compactar" ${tempSelection === 'Compactar' ? 'selected' : ''}>Compactar</option>
+                                <option value="Sin Datos" ${tempSelection === 'Sin Datos' ? 'selected' : ''}>Sin Datos</option>
+                                <option value="Falta transcurso de tiempo" ${tempSelection === 'Falta transcurso de tiempo' ? 'selected' : ''}>Falta transcurso de tiempo</option>
+                                <option value="Pertenece a policia" ${tempSelection === 'Pertenece a policia' ? 'selected' : ''}>Pertenece a policía</option>
+                            </select>
+                            <button class="confirm-btn" onclick="updateResolution('${vehicle.dominio}')">CONFIRMAR</button>
                         </td>
                     </tr>
                 `;
@@ -298,10 +295,16 @@
             resultsDiv.innerHTML = html;
         }
 
+        // Almacena selección temporal
+        function storeSelection(dominio) {
+            const select = document.getElementById(`select-${dominio}`);
+            currentSelections[dominio] = select.value;
+        }
+
         // Actualizar la resolución
-        async function updateResolution(dominio, resolution) {
-            if (!dominio) {
-                showNotification("Error: No se identificó el vehículo", false);
+        async function updateResolution(dominio) {
+            if (!dominio || !currentSelections[dominio]) {
+                showNotification("Selecciona una opción primero", false);
                 return;
             }
 
@@ -312,7 +315,10 @@
                 const vehicleIndex = allVehicles.findIndex(v => v.dominio === dominio);
                 if (vehicleIndex === -1) throw new Error("Vehículo no encontrado");
                 
-                const updatedVehicle = { ...allVehicles[vehicleIndex], resolucion: resolution };
+                const updatedVehicle = { 
+                    ...allVehicles[vehicleIndex], 
+                    resolucion: currentSelections[dominio] 
+                };
                 
                 const response = await fetch(SHEETBEST_API, {
                     method: "POST",
@@ -322,15 +328,17 @@
 
                 if (!response.ok) throw new Error("Error en la API");
 
+                // Actualiza localmente
                 allVehicles[vehicleIndex] = updatedVehicle;
                 
+                // Actualiza la UI
                 const row = document.getElementById(`row-${dominio}`);
                 if (row) {
-                    row.cells[3].textContent = resolution;
+                    row.cells[3].textContent = currentSelections[dominio];
                     row.cells[3].className = "status-completed";
                 }
                 
-                showNotification(`Resolución actualizada: ${resolution}`);
+                showNotification(`Resolución guardada: ${currentSelections[dominio]}`);
                 
             } catch (error) {
                 console.error("Error:", error);
